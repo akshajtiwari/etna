@@ -3,7 +3,7 @@ name: Build and Publish Wheels
 on:
   push:
     tags:
-      - "v*"            # triggers when tag like v0.1.1 is pushed
+      - "v*"
   workflow_dispatch:
 
 permissions:
@@ -21,52 +21,54 @@ jobs:
         python-version: ["3.8", "3.9", "3.10", "3.11", "3.12"]
 
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Python
+      - name: Build wheels with maturin (Linux & macOS)
+        if: matrix.os != 'windows-latest'
+        uses: PyO3/maturin-action@v1
+        with:
+          command: build
+          args: --release --strip -o dist
+          target: ${{ matrix.os == 'ubuntu-latest' && 'x86_64' || '' }}
+          manylinux: auto
+          python-version: ${{ matrix.python-version }}
+
+      - name: Setup Python (Windows)
+        if: matrix.os == 'windows-latest'
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Install Rust toolchain
+      - name: Install Rust (Windows)
+        if: matrix.os == 'windows-latest'
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Install maturin
-        run: pip install --upgrade pip maturin
+      - name: Install maturin (Windows)
+        if: matrix.os == 'windows-latest'
+        run: python -m pip install --upgrade pip maturin
 
-      # manylinux ensures compatibility across ALL Linux distros (Arch, Ubuntu, Debian, Fedora etc)
-      - name: Build wheels
-        run: |
-          if [[ "${{ matrix.os }}" == "ubuntu-latest" ]]; then
-            maturin build --release --strip --manylinux 2014 -o dist
-          else
-            maturin build --release --strip -o dist
-          fi
-        shell: bash
+      - name: Build wheels (Windows)
+        if: matrix.os == 'windows-latest'
+        run: maturin build --release --strip -o dist
 
       - name: Show built files
         run: ls -R dist
         shell: bash
 
-      - name: Upload wheels artifact
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: wheels-${{ matrix.os }}-py${{ matrix.python-version }}
           path: dist
-          if-no-files-found: warn
 
   publish:
     name: Publish to PyPI
     needs: build-wheels
     runs-on: ubuntu-latest
-
-    # Only publish from main repo (not forks)
     if: startsWith(github.ref, 'refs/tags/v') && github.repository == 'etsi-ai/etna'
 
     steps:
-      - name: Download all wheel artifacts
-        uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v4
         with:
           path: dist
 
