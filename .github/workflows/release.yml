@@ -3,7 +3,7 @@ name: Build and Publish Wheels
 on:
   push:
     tags:
-      - "v*"        # trigger when you push version tag like v0.1.1
+      - "v*"          # triggers only on version tags like v0.1.1
   workflow_dispatch:
 
 permissions:
@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   build-wheels:
-    name: Build wheels on ${{ matrix.os }}
+    name: Build (${{ matrix.os }} | py${{ matrix.python-version }})
     runs-on: ${{ matrix.os }}
 
     strategy:
@@ -38,17 +38,25 @@ jobs:
       - name: Build wheels
         run: maturin build --release --strip -o dist
 
+      # Debug step (helps confirm wheels exist)
+      - name: Show built files
+        run: ls -R dist
+
       - name: Upload wheels artifact
         uses: actions/upload-artifact@v4
         with:
-          name: wheels-${{ matrix.os }}-${{ matrix.python-version }}
+          name: wheels-${{ matrix.os }}-py${{ matrix.python-version }}
           path: dist
+          if-no-files-found: warn
 
   publish:
     name: Publish to PyPI
     needs: build-wheels
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v')
+
+    # IMPORTANT:
+    # only publish if running in main repo (not forks)
+    if: startsWith(github.ref, 'refs/tags/v') && github.repository == 'etsi-ai/etna'
 
     steps:
       - name: Download all wheels
@@ -56,7 +64,7 @@ jobs:
         with:
           path: dist
 
-      - name: Flatten wheels folder
+      - name: Flatten wheels
         run: |
           mkdir final_dist
           find dist -name "*.whl" -exec cp {} final_dist/ \;
@@ -64,6 +72,6 @@ jobs:
       - name: Publish to PyPI
         run: |
           pip install maturin
-          maturin upload final_dist/*.whl
+          maturin publish --skip-existing final_dist/*.whl
         env:
           MATURIN_PYPI_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
