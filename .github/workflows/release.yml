@@ -3,7 +3,7 @@ name: Build and Publish Wheels
 on:
   push:
     tags:
-      - "v*"
+      - "v*"          # triggers when tag like v0.1.1 is pushed
   workflow_dispatch:
 
 permissions:
@@ -21,24 +21,26 @@ jobs:
         python-version: ["3.8", "3.9", "3.10", "3.11", "3.12"]
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repo
+        uses: actions/checkout@v4
 
-      - name: Build wheels with maturin (Linux & macOS)
-        if: matrix.os != 'windows-latest'
-        uses: PyO3/maturin-action@v1
-        with:
-          command: build
-          args: --release --strip -o dist
-          target: ${{ matrix.os == 'ubuntu-latest' && 'x86_64' || '' }}
-          manylinux: auto
-          python-version: ${{ matrix.python-version }}
-
-      - name: Setup Python (Windows)
-        if: matrix.os == 'windows-latest'
+      # install correct python per matrix
+      - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
 
+      # ---------- LINUX + MAC ----------
+      # uses official maturin manylinux builder
+      - name: Build wheels (Linux/macOS)
+        if: matrix.os != 'windows-latest'
+        uses: PyO3/maturin-action@v1
+        with:
+          command: build
+          args: --release --strip -o dist --interpreter python
+          manylinux: auto
+
+      # ---------- WINDOWS ----------
       - name: Install Rust (Windows)
         if: matrix.os == 'windows-latest'
         uses: dtolnay/rust-toolchain@stable
@@ -49,13 +51,15 @@ jobs:
 
       - name: Build wheels (Windows)
         if: matrix.os == 'windows-latest'
-        run: maturin build --release --strip -o dist
+        run: maturin build --release --strip -o dist --interpreter python
 
+      # debug listing
       - name: Show built files
         run: ls -R dist
         shell: bash
 
-      - name: Upload artifacts
+      # upload artifacts
+      - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:
           name: wheels-${{ matrix.os }}-py${{ matrix.python-version }}
@@ -65,10 +69,13 @@ jobs:
     name: Publish to PyPI
     needs: build-wheels
     runs-on: ubuntu-latest
+
+    # only publish from main repo (not forks)
     if: startsWith(github.ref, 'refs/tags/v') && github.repository == 'etsi-ai/etna'
 
     steps:
-      - uses: actions/download-artifact@v4
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
         with:
           path: dist
 
